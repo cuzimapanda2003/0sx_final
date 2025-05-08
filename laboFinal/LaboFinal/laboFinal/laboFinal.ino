@@ -4,6 +4,7 @@
 #include <AccelStepper.h>
 #include <PubSubClient.h>
 #include <WiFiEspAT.h>
+#include <DHT.h>
 #include "Alarm.h"
 #include "ViseurAutomatique.h"
 
@@ -46,9 +47,6 @@ float distance;
 Alarm alarm(redPin, greenPin, bluePin, buzzerPin, distance);
 ViseurAutomatique viseur(IN_1, IN_2, IN_3, IN_4, distance);
 
-WiFiClient espClient;
-PubSubClient client(espClient);
-
 int minStepper;
 int maxStepper;
 
@@ -57,7 +55,114 @@ unsigned long currentTime = 0;
 unsigned long tempsAffichageSymbole = 0;
 bool symboleActif = false;
 
+#define AT_BAUD_RATE 115200
 
+#if HOME
+#define DEVICE_NAME "Home"
+#else
+#define DEVICE_NAME "etd20"
+#endif
+
+#define MQTT_PORT 1883
+#define MQTT_USER "etdshawi"
+#define MQTT_PASS "shawi123"
+const char* mqttServer = "216.128.180.194";
+
+WiFiClient wifiClient;
+PubSubClient client(wifiClient);
+
+void wifiInit() {
+  // Initialisation du module WiFi.
+  Serial3.begin(AT_BAUD_RATE);
+  WiFi.init(Serial3);
+
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println();
+    Serial.println("La communication avec le module WiFi a échoué!");
+    // Ne pas continuer
+    while (true) {
+      // Clignoter rapidement pour annoncer l'erreur
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+      delay(50);
+    }
+  }
+
+  // En attendant la connexion au réseau Wifi configuré avec le sketch SetupWiFiConnection
+  Serial.println("En attente de connexion au WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print('.');
+  }
+  Serial.println();
+
+  IPAddress ip = WiFi.localIP();
+  Serial.println();
+  Serial.println("Connecté au réseau WiFi.");
+  Serial.print("Adresse : ");
+  Serial.println(ip);
+
+  printWifiStatus();
+}
+
+// Procédure Afficher le status de la connection
+// WiFi sur le port série
+void printWifiStatus() {
+
+  // imprimez le SSID du réseau auquel vous êtes connecté:
+  char ssid[33];
+  WiFi.SSID(ssid);
+  Serial.print("SSID: ");
+  Serial.println(ssid);
+
+  // imprimez le BSSID du réseau auquel vous êtes connecté:
+  uint8_t bssid[6];
+  WiFi.BSSID(bssid);
+  Serial.print("BSSID: ");
+  printMacAddress(bssid);
+
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  Serial.print("MAC: ");
+  printMacAddress(mac);
+
+  // imprimez l'adresse IP de votre carte:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("Adresse IP: ");
+  Serial.println(ip);
+
+  // imprimez la force du signal reçu:
+  long rssi = WiFi.RSSI();
+  Serial.print("force du signal (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
+}
+
+void printMacAddress(byte mac[]) {
+  for (int i = 5; i >= 0; i--) {
+    if (mac[i] < 16) {
+      Serial.print("0");
+    }
+    Serial.print(mac[i], HEX);
+    if (i > 0) {
+      Serial.print(":");
+    }
+  }
+  Serial.println();
+}
+
+void mqttEvent(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message recu [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i=0;i<length;i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  if (strcmp(topic, "moteur") == 0) {
+    toggleMoteur();    
+  }
+}
 
 void ecranSetup() {
   u8g2.begin();
@@ -89,7 +194,17 @@ void setup() {
   alarm.turnOn();
   viseur.activer();
 
-  client.setServer(mqtt_server, 1883);
+  wifiInit();
+  client.setServer(mqttServer, MQTT_PORT);
+  client.setCallback(mqttEvent);
+
+  if (!client.connect(DEVICE_NAME, MQTT_USER, MQTT_PASS)) {
+    Serial.println("Incapable de se connecter sur le serveur MQTT");
+    Serial.print("client.state : ");
+    Serial.println(client.state());
+  } else {
+    Serial.println("Connecté sur le serveur MQTT");
+  }
 
 
   ecranSetup();
