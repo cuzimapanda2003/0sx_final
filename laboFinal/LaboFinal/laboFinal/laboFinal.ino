@@ -56,6 +56,145 @@ unsigned long tempsAffichageSymbole = 0;
 bool symboleActif = false;
 
 
+#define HAS_SECRETS 0
+
+#if HAS_SECRETS
+#include "arduino_secrets.h"
+/////// SVP par soucis de sécurité, mettez vos informations dans le fichier arduino_secrets.h
+
+// Nom et mot de passe du réseau wifi
+const char ssid[] = SECRET_SSID;
+const char pass[] = SECRET_PASS;
+
+#else
+const char ssid[] = "TechniquesInformatique-Etudiant";  // your network SSID (name)
+const char pass[] = "shawi123";                         // your network password (use for WPA, or use as key for WEP)
+
+#endif
+
+#if HAS_SECRETS
+#define DEVICE_NAME "2168637Maison"
+#else
+#define DEVICE_NAME "2168637"
+#endif
+
+#define MQTT_PORT 1883
+#define MQTT_USER "etdshawi"
+#define MQTT_PASS "shawi123"
+
+// Serveur MQTT du prof
+const char* mqttServer = "216.128.180.194";
+
+WiFiClient wifiClient;
+PubSubClient client(wifiClient);
+
+unsigned long lastWifiAttempt = 0;
+const unsigned long wifiRetryInterval = 10000;
+
+void wifiInit() {
+  while (!Serial)
+    ;
+
+  Serial1.begin(115200);
+  WiFi.init(&Serial1);
+
+  if (WiFi.status() == WL_NO_MODULE) {
+    Serial.println();
+    Serial.println("La communication avec le module WiFi a échoué!");
+  }
+
+  WiFi.disconnect();  // pour effacer le chemin. non persistant
+
+  WiFi.setPersistent();  // définir la connexion WiFi suivante comme persistante
+
+  WiFi.endAP();  // pour désactiver le démarrage automatique persistant AP par défaut au démarrage
+
+  Serial.println();
+  Serial.print("Tentative de connexion à SSID: ");
+  Serial.println(ssid);
+
+  int status = WiFi.begin(ssid, pass);
+
+  if (status == WL_CONNECTED) {
+    Serial.println();
+    Serial.println("Connecté au réseau WiFi.");
+  } else {
+    WiFi.disconnect();
+    Serial.println();
+    Serial.println("La connexion au réseau WiFi a échoué.");
+  }
+}
+
+void toggleMoteur() {
+}
+
+// Gestion des messages reçues de la part du serveur MQTT
+void mqttEvent(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message recu [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  if (strcmp(topic, "moteur") == 0) {
+    toggleMoteur();
+  }
+}
+
+void periodicTask() {
+  static unsigned long lastTime = 0;
+  const unsigned int rate = 10000;
+
+  static char message[100] = "";
+  // static char szTemp[6];
+  // static char szHum[6];
+  // static float temp = 0;
+  // static float hum = 0;
+
+  if (currentTime - lastTime < rate) return;
+
+  lastTime = currentTime;
+
+  // temp = dht.readTemperature();
+  //hum = dht.readHumidity();
+
+  // On convertit les valeurs en chaîne de caractères
+  // dtostrf(temp, 4, 1, szTemp);
+  //dtostrf(hum, 4, 1, szHum);
+
+#if HOME
+  // sprintf(message, "{\"name\":%s, \"temp\" : %s, \"hum\":%s, \"millis\":%lu }", "\"profHome\"", szTemp, szHum, currentTime / 1000);
+#else
+                                                        // sprintf(message, "{\"name\":%s, \"temp\" : %s, \"hum\":%s, \"millis\":%lu }", "\"Le prof\"", szTemp, szHum, currentTime / 1000);
+#endif
+
+  // Serial.print("Envoie : ");
+  // Serial.println(message);
+
+
+  // Changer le topic pour celui qui vous concerne.
+  if (!client.publish("etd/20/data", message)) {
+    reconnect();
+    Serial.println("Incapable d'envoyer le message!");
+  } else {
+    Serial.println("Message envoyé");
+  }
+}
+
+bool reconnect() {
+  bool result = client.connect(DEVICE_NAME, MQTT_USER, MQTT_PASS);
+  if (!result) {
+    Serial.println("Incapable de se connecter sur le serveur MQTT");
+  }
+  return result;
+}
+
+
+
+
+
 
 void ecranSetup() {
   u8g2.begin();
@@ -68,7 +207,7 @@ void ecranSetup() {
 void lcdstart() {
   lcd.print("2168637");
   lcd.setCursor(0, 1);
-  lcd.print("labo7");
+  lcd.print("labo5");
   delay(2000);
 }
 
@@ -87,6 +226,19 @@ void setup() {
   alarm.turnOn();
   viseur.activer();
 
+  wifiInit();
+
+  client.setServer(mqttServer, MQTT_PORT);
+  client.setCallback(mqttEvent);
+
+  if (!client.connect(DEVICE_NAME, MQTT_USER, MQTT_PASS)) {
+    Serial.println("Incapable de se connecter sur le serveur MQTT");
+    Serial.print("client.state : ");
+    Serial.println(client.state());
+  } else {
+    Serial.println("Connecté sur le serveur MQTT");
+  }
+
 
 
   ecranSetup();
@@ -100,6 +252,21 @@ void loop() {
   ecranLCD(currentTime);
   alarm.update();
   viseur.update();
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    if (currentTime - lastWifiAttempt >= wifiRetryInterval) {
+      Serial.println("WiFi perdu. Tentative de reconnexion...");
+      WiFi.begin(ssid, pass);
+      lastWifiAttempt = currentTime;
+    }
+  }
+
+
   commande();
 }
 
