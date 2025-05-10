@@ -126,6 +126,16 @@ void wifiInit() {
 }
 
 void toggleMoteur() {
+  static bool moteurActif = false;
+  if (moteurActif) {
+    viseur.desactiver();
+    moteurActif = false;
+    Serial.println("Moteur éteint.");
+  } else {
+    viseur.activer();
+    moteurActif = true;
+    Serial.println("Moteur allumé.");
+  }
 }
 
 // Gestion des messages reçues de la part du serveur MQTT
@@ -145,43 +155,85 @@ void mqttEvent(char* topic, byte* payload, unsigned int length) {
 
 void periodicTask() {
   static unsigned long lastTime = 0;
-  const unsigned int rate = 10000;
-
-  static char message[100] = "";
-  // static char szTemp[6];
-  // static char szHum[6];
-  // static float temp = 0;
-  // static float hum = 0;
+  const unsigned int rate = 2500;  // toutes les 2.5 secondes
 
   if (currentTime - lastTime < rate) return;
-
   lastTime = currentTime;
 
-  // temp = dht.readTemperature();
-  //hum = dht.readHumidity();
+  unsigned long uptime = millis() / 1000;
+  float dist = distance;
+  int angle = viseur.getAngle();
+  int motorState = viseur.getEtatTexte();
 
-  // On convertit les valeurs en chaîne de caractères
-  // dtostrf(temp, 4, 1, szTemp);
-  //dtostrf(hum, 4, 1, szHum);
+  String color = getLedColor();
 
-#if HOME
-  // sprintf(message, "{\"name\":%s, \"temp\" : %s, \"hum\":%s, \"millis\":%lu }", "\"profHome\"", szTemp, szHum, currentTime / 1000);
-#else
-                                                        // sprintf(message, "{\"name\":%s, \"temp\" : %s, \"hum\":%s, \"millis\":%lu }", "\"Le prof\"", szTemp, szHum, currentTime / 1000);
-#endif
-
-  // Serial.print("Envoie : ");
-  // Serial.println(message);
+  int lum = analogRead(A1) / 10;
 
 
-  // Changer le topic pour celui qui vous concerne.
+  const char* name = "Marc";
+  const char* number = "2168637";
+
+  char message[500];
+  snprintf(message, sizeof(message),
+           "{\"name\":\"%s\", \"number\":\"%s\", \"uptime\":%lu, \"dist\":%.2f, \"angle\":%d, "
+           "\"motor\":%d, \"color\":\"%s\", \"lum\":%d}",
+           name, number, uptime, dist, angle, motorState, color.c_str(), lum);
+
+  Serial.print("Envoi MQTT : ");
+  Serial.println(message);
+
   if (!client.publish("etd/20/data", message)) {
     reconnect();
-    Serial.println("Incapable d'envoyer le message!");
+    Serial.println("Échec d'envoi !");
   } else {
-    Serial.println("Message envoyé");
+    Serial.println("Message envoyé avec succès.");
   }
 }
+
+String getLedColor() {
+
+  if (digitalRead(redPin) == HIGH) {
+    return "#FF0000";  // Rouge
+  } else if (digitalRead(greenPin) == HIGH) {
+    return "#00FF00";  // Vert
+  } else if (digitalRead(bluePin) == HIGH) {
+    return "#0000FF";  // Bleu
+  } else {
+    return "#000000";  // Noir (aucune LED allumée)
+  }
+}
+
+
+
+void periodicTaskLCD() {
+  static unsigned long lastTime = 0;
+  const unsigned int rate = 1100;
+
+  if (currentTime - lastTime < rate) return;
+  lastTime = currentTime;
+
+  char line1[20];
+  char line2[20];
+
+  snprintf(line1, sizeof(line1), "Dist : %.0f cm", distance);
+  snprintf(line2, sizeof(line2), "Obj  : %s", viseur.getEtatTexte());
+
+  char message[200];
+  snprintf(message, sizeof(message),
+           "{\"line1\": \"%s\", \"line2\": \"%s\"}", line1, line2);
+
+  Serial.print("Envoi LCD MQTT : ");
+  Serial.println(message);
+
+  if (!client.publish("etd/20/lcd", message)) {
+    reconnect();
+    Serial.println("Échec d'envoi LCD !");
+  } else {
+    Serial.println("Message LCD envoyé.");
+  }
+}
+
+
 
 bool reconnect() {
   bool result = client.connect(DEVICE_NAME, MQTT_USER, MQTT_PASS);
@@ -238,7 +290,7 @@ void setup() {
   } else {
     Serial.println("Connecté sur le serveur MQTT");
   }
-
+  client.subscribe("moteur", 0);
 
 
   ecranSetup();
