@@ -218,6 +218,12 @@ void mqttEvent(char* topic, byte* payload, unsigned int length) {
       Serial.println("Message inconnu pour le moteur");
     }
   }
+    if (strcmp(topic, "etd/20/color") == 0) {
+    String colorHex = message;
+
+    Serial.print("Couleur reçue : ");
+    Serial.println(colorHex); 
+  }
 }
 
 
@@ -329,6 +335,7 @@ void setup() {
     Serial.println("Connecté sur le serveur MQTT");
   }
   client.subscribe("etd/20/motor", 0);
+  client.subscribe("etd/20/color", 0);
 
 
   ecranSetup();
