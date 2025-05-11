@@ -189,11 +189,9 @@ void printMacAddress(byte mac[]) {
 
 void toggleMoteurOff() {
   viseur.desactiver();
-  Serial.println("Moteur a OFF");
 }
 void toggleMoteurOn() {
   viseur.activer();
-  Serial.println("Moteur a ON");
 }
 
 // Gestion des messages reçues de la part du serveur MQTT
@@ -201,17 +199,27 @@ void mqttEvent(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message recu [");
   Serial.print(topic);
   Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
 
-  if (strcmp(topic, "etd/20/data/motor") == 0) {
-    toggleMoteurOff();
-  } else {
-    toggleMoteurOn();
+  String message = "";
+  for (int i = 0; i < length; i++) {
+    message += (char)payload[i];
+  }
+
+  Serial.println(message);
+
+  if (strcmp(topic, "etd/20/motor") == 0) {
+    if (message.indexOf("\"motor\":1") != -1) {
+      toggleMoteurOn();
+      Serial.println("Moteur ON");
+    } else if (message.indexOf("\"motor\":0") != -1) {
+      toggleMoteurOff();
+      Serial.println("Moteur OFF");
+    } else {
+      Serial.println("Message inconnu pour le moteur");
+    }
   }
 }
+
 
 
 void periodicTask() {
@@ -244,8 +252,6 @@ void periodicTask() {
     Serial.println("Message envoyé");
   }
 }
-
-
 void periodicTaskLCD() {
   static unsigned long lastTime = 0;
   const unsigned int rate = 1100;
@@ -253,7 +259,7 @@ void periodicTaskLCD() {
   lastTime = currentTime;
 
   char distStr[10];
-  dtostrf(distance, 1, 0, distStr); 
+  dtostrf(distance, 1, 0, distStr);
 
 
   char line1[20];
@@ -275,10 +281,6 @@ void periodicTaskLCD() {
     Serial.println("Message LCD envoyé.");
   }
 }
-
-
-
-
 bool reconnect() {
   bool result = client.connect(DEVICE_NAME, MQTT_USER, MQTT_PASS);
   if (!result) {
@@ -286,8 +288,6 @@ bool reconnect() {
   }
   return result;
 }
-
-
 void ecranSetup() {
   u8g2.begin();
   u8g2.setContrast(5);
@@ -295,14 +295,12 @@ void ecranSetup() {
   u8g2.clearBuffer();
   u8g2.sendBuffer();
 }
-
 void lcdstart() {
   lcd.print("2168637");
   lcd.setCursor(0, 1);
   lcd.print("laboFinal");
   delay(2000);
 }
-
 void setup() {
   Serial.begin(115200);
   lcd.begin();
@@ -330,14 +328,12 @@ void setup() {
   } else {
     Serial.println("Connecté sur le serveur MQTT");
   }
-  client.subscribe("etd/20/data/motor", 0);
+  client.subscribe("etd/20/motor", 0);
 
 
   ecranSetup();
   lcdstart();
 }
-
-
 void loop() {
   currentTime = millis();
   chercherDistance();
@@ -363,7 +359,6 @@ void loop() {
 
   commande();
 }
-
 void ecranLCD(unsigned long time) {
   static unsigned long lastTime = 0;
   int rate = 100;
@@ -380,7 +375,6 @@ void ecranLCD(unsigned long time) {
     lastTime = time;
   }
 }
-
 void chercherDistance() {
   static unsigned long previousMillis = 0;
   unsigned long currentMillis = millis();
@@ -391,7 +385,6 @@ void chercherDistance() {
     distance = hc.dist();
   }
 }
-
 void verifierSymbole() {
   if (symboleActif && millis() - tempsAffichageSymbole >= 3000) {
     u8g2.clearBuffer();
@@ -399,9 +392,6 @@ void verifierSymbole() {
     symboleActif = false;
   }
 }
-
-
-
 void dessinInterdit() {
 
   u8g2.clearBuffer();
@@ -411,7 +401,6 @@ void dessinInterdit() {
   symboleActif = true;
   tempsAffichageSymbole = millis();
 }
-
 void dessinX() {
   u8g2.clearBuffer();
   u8g2.drawLine(7, 0, 0, 7);
@@ -420,7 +409,6 @@ void dessinX() {
   symboleActif = true;
   tempsAffichageSymbole = millis();
 }
-
 void dessinWeGood() {
   u8g2.clearBuffer();
   u8g2.drawLine(4, 4, 2, 6);
@@ -429,8 +417,6 @@ void dessinWeGood() {
   symboleActif = true;
   tempsAffichageSymbole = millis();
 }
-
-
 void analyserCommande(const String& tampon, String& commande, String& arg1, String& arg2) {
   commande = "";
   arg1 = "";
@@ -458,9 +444,6 @@ void analyserCommande(const String& tampon, String& commande, String& arg1, Stri
     arg1 = tampon.substring(firstSep + 1);
   }
 }
-
-
-
 void commande() {
   if (!Serial.available()) {
     return;
