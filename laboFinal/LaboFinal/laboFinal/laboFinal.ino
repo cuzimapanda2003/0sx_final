@@ -1,3 +1,4 @@
+
 #include <HCSR04.h>
 #include <LCD_I2C.h>
 #include <U8g2lib.h>
@@ -30,6 +31,9 @@ U8G2_MAX7219_8X8_F_4W_SW_SPI u8g2(
 
 #define TRIGGER_PIN 3
 #define ECHO_PIN 2
+
+#define lum "A0"
+int lumiere;
 
 int buzzerPin = 4;
 int frequence = 1;
@@ -94,7 +98,8 @@ unsigned long lastWifiAttempt = 0;
 const unsigned long wifiRetryInterval = 10000;
 
 void wifiInit() {
- while (!Serial);
+  while (!Serial)
+    ;
 
   Serial1.begin(AT_BAUD_RATE);
   WiFi.init(Serial1);
@@ -103,28 +108,29 @@ void wifiInit() {
     Serial.println();
     Serial.println("Communication with WiFi module failed!");
     // don't continue
-    while (true);
+    while (true)
+      ;
   }
 
-  WiFi.disconnect(); // to clear the way. not persistent
+  WiFi.disconnect();  // to clear the way. not persistent
 
-  WiFi.setPersistent(); // set the following WiFi connection as persistent
+  WiFi.setPersistent();  // set the following WiFi connection as persistent
 
-  WiFi.endAP(); // to disable default automatic start of persistent AP at startup
+  WiFi.endAP();  // to disable default automatic start of persistent AP at startup
 
-//  uncomment this lines for persistent static IP. set addresses valid for your network
-//  IPAddress ip(192, 168, 1, 9);
-//  IPAddress gw(192, 168, 1, 1);
-//  IPAddress nm(255, 255, 255, 0);
-//  WiFi.config(ip, gw, gw, nm);
+  //  uncomment this lines for persistent static IP. set addresses valid for your network
+  //  IPAddress ip(192, 168, 1, 9);
+  //  IPAddress gw(192, 168, 1, 1);
+  //  IPAddress nm(255, 255, 255, 0);
+  //  WiFi.config(ip, gw, gw, nm);
 
   Serial.println();
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(ssid);
 
-//  use following lines if you want to connect with bssid
-//  const byte bssid[] = {0x8A, 0x2F, 0xC3, 0xE9, 0x25, 0xC0};
-//  int status = WiFi.begin(ssid, pass, bssid);
+  //  use following lines if you want to connect with bssid
+  //  const byte bssid[] = {0x8A, 0x2F, 0xC3, 0xE9, 0x25, 0xC0};
+  //  int status = WiFi.begin(ssid, pass, bssid);
 
   int status = WiFi.begin(ssid, pass);
 
@@ -133,12 +139,11 @@ void wifiInit() {
     Serial.println("Connected to WiFi network.");
     printWifiStatus();
   } else {
-    WiFi.disconnect(); // remove the WiFi connection
+    WiFi.disconnect();  // remove the WiFi connection
     Serial.println();
     Serial.println("Connection to WiFi network failed.");
   }
 }
-
 void printWifiStatus() {
 
   // print the SSID of the network you're attached to:
@@ -182,18 +187,13 @@ void printMacAddress(byte mac[]) {
   Serial.println();
 }
 
-
-void toggleMoteur() {
-  static bool moteurActif = false;
-  if (moteurActif) {
-    viseur.desactiver();
-    moteurActif = false;
-    Serial.println("Moteur éteint.");
-  } else {
-    viseur.activer();
-    moteurActif = true;
-    Serial.println("Moteur allumé.");
-  }
+void toggleMoteurOff() {
+  viseur.desactiver();
+  Serial.println("Moteur a OFF");
+}
+void toggleMoteurOn() {
+  viseur.activer();
+  Serial.println("Moteur a ON");
 }
 
 // Gestion des messages reçues de la part du serveur MQTT
@@ -206,10 +206,13 @@ void mqttEvent(char* topic, byte* payload, unsigned int length) {
   }
   Serial.println();
 
-  if (strcmp(topic, "etd/20/motor") == 0) {
-    toggleMoteur();
+  if (strcmp(topic, "etd/20/data/motor") == 0) {
+    toggleMoteurOff();
+  } else {
+    toggleMoteurOn();
   }
 }
+
 
 void periodicTask() {
   static unsigned long lastTime = 0;
@@ -219,23 +222,17 @@ void periodicTask() {
   lastTime = currentTime;
 
   unsigned long uptime = millis() / 1000;
-  float dist = distance;
+  int dist = static_cast<int>(distance);
   int angle = viseur.getAngle();
-  int motorState = viseur.getEtatTexte();
+  lumiere = map(analogRead(lum), 0, 1023, 0, 100);
 
-  String color = getLedColor();
+  const int MAX_CHAR = 300;
+  char message[MAX_CHAR];
 
-  int lum = analogRead(A1) / 10;
-
-
-  const char* name = "Marc";
-  const char* number = "2168637";
-
-  char message[500];
-  snprintf(message, sizeof(message),
-           "{\"name\":\"%s\", \"number\":\"%s\", \"uptime\":%lu, \"dist\":%.2f, \"angle\":%d, "
-           "\"motor\":%d, \"color\":\"%s\", \"lum\":%d}",
-           name, number, uptime, dist, angle, motorState, color.c_str(), lum);
+  // Ajout des clés "name" et "number"
+  sprintf(message,
+          "{\"name\":\"marc\", \"number\":7, \"uptime\":%lu, \"dist\":%d, \"angle\":%d, \"lum\":%d}",
+          uptime, dist, angle, lumiere);
 
   Serial.print("Envoi MQTT : ");
   Serial.println(message);
@@ -248,32 +245,20 @@ void periodicTask() {
   }
 }
 
-String getLedColor() {
-
-  if (digitalRead(redPin) == HIGH) {
-    return "#FF0000";  // Rouge
-  } else if (digitalRead(greenPin) == HIGH) {
-    return "#00FF00";  // Vert
-  } else if (digitalRead(bluePin) == HIGH) {
-    return "#0000FF";  // Bleu
-  } else {
-    return "#000000";  // Noir (aucune LED allumée)
-  }
-}
-
-
 
 void periodicTaskLCD() {
   static unsigned long lastTime = 0;
   const unsigned int rate = 1100;
-
   if (currentTime - lastTime < rate) return;
   lastTime = currentTime;
 
+  char distStr[10];
+  dtostrf(distance, 1, 0, distStr); 
+
+
   char line1[20];
   char line2[20];
-
-  snprintf(line1, sizeof(line1), "Dist : %.0f cm", distance);
+  snprintf(line1, sizeof(line1), "Dist : %s cm", distStr);
   snprintf(line2, sizeof(line2), "Obj  : %s", viseur.getEtatTexte());
 
   char message[200];
@@ -283,13 +268,14 @@ void periodicTaskLCD() {
   Serial.print("Envoi LCD MQTT : ");
   Serial.println(message);
 
-  if (!client.publish("etd/20/lcd", message)) {
+  if (!client.publish("etd/20/data", message)) {
     reconnect();
     Serial.println("Échec d'envoi LCD !");
   } else {
     Serial.println("Message LCD envoyé.");
   }
 }
+
 
 
 
@@ -300,10 +286,6 @@ bool reconnect() {
   }
   return result;
 }
-
-
-
-
 
 
 void ecranSetup() {
@@ -317,7 +299,7 @@ void ecranSetup() {
 void lcdstart() {
   lcd.print("2168637");
   lcd.setCursor(0, 1);
-  lcd.print("labo5");
+  lcd.print("laboFinal");
   delay(2000);
 }
 
@@ -348,7 +330,7 @@ void setup() {
   } else {
     Serial.println("Connecté sur le serveur MQTT");
   }
-  client.subscribe("moteur", 0);
+  client.subscribe("etd/20/data/motor", 0);
 
 
   ecranSetup();
@@ -375,6 +357,8 @@ void loop() {
       lastWifiAttempt = currentTime;
     }
   }
+  periodicTask();
+  periodicTaskLCD();
 
 
   commande();
